@@ -19,13 +19,13 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Add armhf architecture
-        run: |
-          sudo dpkg --add-architecture armhf
-          sudo tee /etc/apt/sources.list.d/raspi.list <<<"deb [arch=armhf] http://archive.raspberrypi.org/debian/ bullseye main"
-          sudo mkdir -p /etc/apt/keyrings
-          curl -fsSL https://archive.raspberrypi.org/debian/raspberrypi.gpg.key | sudo tee /etc/apt/keyrings/raspberrypi.gpg > /dev/null
-          sudo apt-get update
+        - name: Add armhf architecture
+          run: |
+            sudo dpkg --add-architecture armhf
+            sudo mkdir -p /etc/apt/keyrings
+            curl -fsSL https://archive.raspberrypi.org/debian/raspberrypi.gpg.key | sudo tee /etc/apt/keyrings/raspberrypi.gpg > /dev/null
+            sudo tee /etc/apt/sources.list.d/raspi.list <<<"deb [arch=armhf signed-by=/etc/apt/keyrings/raspberrypi.gpg] http://archive.raspberrypi.org/debian/ bullseye main"
+            sudo apt-get update
 
       - name: Install cross compiler and base dependencies
         run: |
