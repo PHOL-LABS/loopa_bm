@@ -1,0 +1,92 @@
+name: Cross-compile for Raspberry Pi Zero
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      TARGET_TRIPLE: arm-linux-gnueabihf
+      SYSROOT: /usr/arm-linux-gnueabihf
+      INSTALL_PREFIX: ${{ github.workspace }}/artifacts/sysroot
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Add armhf architecture
+        run: |
+          sudo dpkg --add-architecture armhf
+          sudo tee /etc/apt/sources.list.d/raspi.list <<<"deb [arch=armhf] http://archive.raspberrypi.org/debian/ bullseye main"
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://archive.raspberrypi.org/debian/raspberrypi.gpg.key | sudo tee /etc/apt/keyrings/raspberrypi.gpg > /dev/null
+          sudo apt-get update
+
+      - name: Install cross compiler and base dependencies
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            crossbuild-essential-armhf cmake ninja-build pkg-config curl ca-certificates \
+            libasound2-dev:armhf libjack-jackd2-dev:armhf libpulse-dev:armhf libsndfile1-dev:armhf \
+            libx11-dev:armhf libgl1-mesa-dev:armhf libglu1-mesa-dev:armhf libudev-dev:armhf \
+            libogg-dev:armhf libvorbis-dev:armhf libraspberrypi-dev:armhf
+
+      - name: Prepare legacy VideoCore headers
+        run: |
+          mkdir -p "${SYSROOT}/opt/vc"
+          if [ ! -d "${SYSROOT}/opt/vc/include" ]; then
+            curl -L https://github.com/raspberrypi/firmware/archive/refs/heads/master.tar.gz | \
+              tar -xz --strip-components=3 -C "${SYSROOT}/opt/vc" firmware-master/hardfp/opt/vc
+          fi
+
+      - name: Build wiringPi for armhf
+        run: |
+          git clone --depth=1 https://github.com/WiringPi/WiringPi /tmp/wiringpi
+          make -C /tmp/wiringpi/wiringPi CC=${TARGET_TRIPLE}-gcc CXX=${TARGET_TRIPLE}-g++ AR=${TARGET_TRIPLE}-ar \
+            SYSROOT=${SYSROOT}
+          sudo make -C /tmp/wiringpi/wiringPi DESTDIR=${SYSROOT} PREFIX=/usr install
+
+      - name: Build RtAudio
+        run: |
+          cmake -S 3rdparty/rtaudio -B build/rtaudio \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/armv6-rpi-zero.cmake \
+            -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/usr \
+            -DRTAUDIO_BUILD_TESTING=OFF -DRTAUDIO_API_ALSA=ON -DRTAUDIO_API_JACK=ON
+          cmake --build build/rtaudio --config Release --parallel
+          cmake --install build/rtaudio
+
+      - name: Build RtMidi
+        run: |
+          cmake -S 3rdparty/rtmidi -B build/rtmidi \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/armv6-rpi-zero.cmake \
+            -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/usr \
+            -DRTMIDI_BUILD_TESTING=OFF
+          cmake --build build/rtmidi --config Release --parallel
+          cmake --install build/rtmidi
+
+      - name: Configure loopa
+        run: |
+          cmake -S . -B build/loopa \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/armv6-rpi-zero.cmake \
+            -DCMAKE_PREFIX_PATH="${INSTALL_PREFIX}/usr;${SYSROOT}/usr" \
+            -DCMAKE_INSTALL_RPATH=/usr/lib/arm-linux-gnueabihf
+
+      - name: Build loopa
+        run: cmake --build build/loopa --config Release --parallel
+
+      - name: Package artifacts
+        run: |
+          mkdir -p artifacts/bin
+          cp build/loopa/loopa artifacts/bin/
+          tar -czf loopa-rpi-zero.tar.gz -C artifacts .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: loopa-rpi-zero
+          path: loopa-rpi-zero.tar.gz
