@@ -72,8 +72,8 @@ WORKDIR /tmp/wiringpi
 RUN git clone --single-branch --branch master https://github.com/WiringPi/WiringPi.git . \
     && git checkout ${WIRINGPI_SHA} \
     && cd wiringPi \
-    && CC=${GNU_HOST}-gcc make -j"$(nproc)" \
-    && make install DESTDIR=${SYSROOT} PREFIX=""
+    && DEB_BUILD_ARCH=armhf DEB_HOST_ARCH=armhf CC=${GNU_HOST}-gcc ./build debian \
+    && dpkg-deb -x debian-template/wiringpi-*.deb ${SYSROOT}
 
 # Assemble sysroot with GPU + GPIO bits.
 FROM base AS sysroot
