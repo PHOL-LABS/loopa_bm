@@ -67,7 +67,7 @@ RUN git clone --single-branch --branch master https://github.com/raspberrypi/use
 
 # Build wiringPi for the target architecture.
 FROM base AS wiringpi
-ARG WIRINGPI_SHA=6d9ce35
+ARG WIRINGPI_SHA=b2af17e
 WORKDIR /tmp/wiringpi
 RUN git clone --single-branch --branch master https://github.com/WiringPi/WiringPi.git . \
     && git checkout ${WIRINGPI_SHA} \
