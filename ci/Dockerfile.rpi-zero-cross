@@ -71,7 +71,7 @@ ARG WIRINGPI_SHA=b2af17e
 WORKDIR /tmp/wiringpi
 RUN git clone --single-branch --branch master https://github.com/WiringPi/WiringPi.git . \
     && git checkout ${WIRINGPI_SHA} \
-    && cd wiringPi \
+    && chmod +x ./build \
     && DEB_BUILD_ARCH=armhf DEB_HOST_ARCH=armhf CC=${GNU_HOST}-gcc ./build debian \
     && dpkg-deb -x debian-template/wiringpi-*.deb ${SYSROOT}
 
