@@ -20,6 +20,9 @@ RUN dpkg --add-architecture armhf \
         pkg-config \
         gcc-$GNU_HOST \
         g++-$GNU_HOST \
+        libc6:armhf \
+        libc6-dev:armhf \
+        linux-libc-dev:armhf \
         libstdc++-10-dev:armhf \
         libasound2-dev:armhf \
         libjack-jackd2-dev:armhf \
