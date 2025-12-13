@@ -23,7 +23,7 @@ RUN dpkg --add-architecture armhf \
         libc6:armhf \
         libc6-dev:armhf \
         linux-libc-dev:armhf \
-        libstdc++-10-dev:armhf \
+        libstdc++-dev:armhf \
         libasound2-dev:armhf \
         libjack-jackd2-dev:armhf \
         libpulse-dev:armhf \
@@ -50,6 +50,10 @@ RUN mkdir -p $(dirname $TOOLCHAIN_FILE) \
     && echo "set(CMAKE_STAGING_PREFIX ${SYSROOT})" >> $TOOLCHAIN_FILE \
     && echo "set(CMAKE_C_COMPILER /usr/bin/${GNU_HOST}-gcc)" >> $TOOLCHAIN_FILE \
     && echo "set(CMAKE_CXX_COMPILER /usr/bin/${GNU_HOST}-g++)" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_C_FLAGS_INIT --sysroot=${SYSROOT})" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_CXX_FLAGS_INIT --sysroot=${SYSROOT})" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_EXE_LINKER_FLAGS_INIT --sysroot=${SYSROOT})" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_SHARED_LINKER_FLAGS_INIT --sysroot=${SYSROOT})" >> $TOOLCHAIN_FILE \
     && echo "set(CMAKE_FIND_ROOT_PATH ${SYSROOT})" >> $TOOLCHAIN_FILE \
     && echo "set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)" >> $TOOLCHAIN_FILE \
     && echo "set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)" >> $TOOLCHAIN_FILE \
