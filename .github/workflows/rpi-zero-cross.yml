@@ -1,0 +1,33 @@
+name: rpi-zero-cross
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  build-rpi-zero:
+    name: Cross-compile Raspberry Pi Zero binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Raspberry Pi Zero artifact (Docker buildx)
+        run: |
+          docker buildx build \
+            -f ci/Dockerfile.rpi-zero-cross \
+            --target artifact \
+            --output type=local,dest=./artifacts \
+            .
+
+      - name: Upload cross-compiled binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: loopa-rpi-zero
+          path: artifacts/out
+          if-no-files-found: error
+          retention-days: 14

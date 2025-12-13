@@ -1,0 +1,105 @@
+# syntax=docker/dockerfile:1.4
+# Cross-compilation image for Raspberry Pi Zero / Zero W (ARMv6)
+# Inspired by Roland's Dev Blog article on Docker + buildx cross compilation.
+
+FROM debian:bullseye AS base
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    GNU_HOST=arm-linux-gnueabihf \
+    SYSROOT=/usr/arm-linux-gnueabihf \
+    TOOLCHAIN_FILE=/opt/toolchains/armv6-rpi.cmake
+
+RUN dpkg --add-architecture armhf \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        build-essential \
+        cmake \
+        pkg-config \
+        gcc-$GNU_HOST \
+        g++-$GNU_HOST \
+        libc6:armhf \
+        libc6-dev:armhf \
+        linux-libc-dev:armhf \
+        libstdc++-dev:armhf \
+        libasound2-dev:armhf \
+        libjack-jackd2-dev:armhf \
+        libpulse-dev:armhf \
+        libudev-dev:armhf \
+        libx11-dev:armhf \
+        libglu1-mesa-dev:armhf \
+        mesa-common-dev:armhf \
+        librtaudio-dev:armhf \
+        librtmidi-dev:armhf \
+        libsamplerate0-dev:armhf \
+        gettext-base \
+        ninja-build \
+        python3 \
+        python3-pip \
+        file \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Toolchain configuration compatible with CMake cross-compiling docs.
+RUN mkdir -p $(dirname $TOOLCHAIN_FILE) \
+    && echo "set(CMAKE_SYSTEM_NAME Linux)" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_SYSTEM_PROCESSOR arm)" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_SYSROOT ${SYSROOT})" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_STAGING_PREFIX ${SYSROOT})" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_C_COMPILER /usr/bin/${GNU_HOST}-gcc)" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_CXX_COMPILER /usr/bin/${GNU_HOST}-g++)" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_C_FLAGS_INIT --sysroot=${SYSROOT})" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_CXX_FLAGS_INIT --sysroot=${SYSROOT})" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_EXE_LINKER_FLAGS_INIT --sysroot=${SYSROOT})" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_SHARED_LINKER_FLAGS_INIT --sysroot=${SYSROOT})" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_FIND_ROOT_PATH ${SYSROOT})" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)" >> $TOOLCHAIN_FILE \
+    && echo "set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)" >> $TOOLCHAIN_FILE
+
+# Build Raspberry Pi userland to obtain the legacy VC/GL headers and libs under the sysroot.
+FROM base AS userland
+ARG USERLAND_SHA=f73fca0
+WORKDIR /tmp/userland
+RUN git clone --single-branch --branch master https://github.com/raspberrypi/userland.git . \
+    && git checkout ${USERLAND_SHA} \
+    && cmake -DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN_FILE} \
+             -DCMAKE_BUILD_TYPE=Release \
+             -DCMAKE_INSTALL_PREFIX=${SYSROOT} \
+             . \
+    && cmake --build . --parallel \
+    && cmake --install .
+
+# Build wiringPi for the target architecture.
+FROM base AS wiringpi
+ARG WIRINGPI_SHA=b2af17e
+WORKDIR /tmp/wiringpi
+RUN git clone --single-branch --branch master https://github.com/WiringPi/WiringPi.git . \
+    && git checkout ${WIRINGPI_SHA} \
+    && chmod +x ./build \
+    && DEB_BUILD_ARCH=armhf DEB_HOST_ARCH=armhf CC=${GNU_HOST}-gcc ./build debian \
+    && dpkg-deb -x debian-template/wiringpi-*.deb ${SYSROOT}
+
+# Assemble sysroot with GPU + GPIO bits.
+FROM base AS sysroot
+COPY --from=userland ${SYSROOT} ${SYSROOT}
+COPY --from=wiringpi ${SYSROOT} ${SYSROOT}
+
+# Build project artifacts.
+FROM sysroot AS builder
+WORKDIR /src
+COPY . .
+ENV PKG_CONFIG_PATH=${SYSROOT}/lib/pkgconfig:${SYSROOT}/share/pkgconfig \
+    CMAKE_PREFIX_PATH=${SYSROOT}
+RUN cmake -B build -S . \
+      -DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN_FILE} \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH} \
+      -DCMAKE_INSTALL_PREFIX=${SYSROOT} \
+    && cmake --build build --config Release
+
+FROM scratch AS artifact
+COPY --from=builder /src/build/loopa /out/loopa
